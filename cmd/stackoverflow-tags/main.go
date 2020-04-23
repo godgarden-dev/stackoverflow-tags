@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gocarina/gocsv"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"time"
@@ -56,6 +58,9 @@ func main() {
 	}
 
 	fmt.Println(tags)
+	if err := output(tags); err != nil {
+		log.Fatal(err)
+	}
 
 	log.Println("INFO:END")
 }
@@ -117,33 +122,33 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 	items = append(items, tagResp.Items...)
 
 	for tagResp.HasMore {
-			req, err := c.newRequest(ctx, "GET", "/tags", nil)
-			if err != nil {
-				return nil, err
-			}
+		req, err := c.newRequest(ctx, "GET", "/tags", nil)
+		if err != nil {
+			return nil, err
+		}
 
-			q.Set("page", strconv.Itoa(page + 1))
-			req.URL.RawQuery = q.Encode()
+		q.Set("page", strconv.Itoa(page+1))
+		req.URL.RawQuery = q.Encode()
 
-			res, err := c.HTTPClient.Do(req)
-			if err != nil {
-				return nil, err
-			}
+		res, err := c.HTTPClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
 
-			if res.StatusCode != 200 {
-				log.Printf("break!! status:%d", res.StatusCode)
-				break
-			}
+		if res.StatusCode != 200 {
+			log.Printf("break!! status:%d", res.StatusCode)
+			break
+		}
 
-			var tags TagResponse
-			if err := decodeBody(res, &tags); err != nil {
-				return nil, err
-			}
+		var tags TagResponse
+		if err := decodeBody(res, &tags); err != nil {
+			return nil, err
+		}
 
-			// Request間隔の調整
-			time.Sleep(time.Second * 60)
-			tagResp.HasMore = false
-			items = append(items, tagResp.Items...)
+		// Request間隔の調整
+		time.Sleep(time.Second * 60)
+		tagResp.HasMore = false
+		items = append(items, tagResp.Items...)
 	}
 
 	return items, nil
@@ -155,3 +160,20 @@ func decodeBody(resp *http.Response, out interface{}) error {
 	return decoder.Decode(out)
 }
 
+func output(tags []Tag) error {
+	file, err := os.OpenFile("/tmp/stackoverflow_tags.csv", os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := file.Truncate(0); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := gocsv.MarshalFile(&tags, file); err != nil {
+		log.Fatal(err)
+	}
+
+	return nil
+}
