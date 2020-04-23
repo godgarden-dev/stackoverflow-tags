@@ -1,3 +1,3 @@
 # stackoverflow-tags
 
-Get all tag information from stackoverflows
+Get all tag information from stackoverflow
