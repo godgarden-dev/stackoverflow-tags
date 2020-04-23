@@ -147,7 +147,6 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 
 		// Request間隔の調整
 		time.Sleep(time.Second * 60)
-		tagResp.HasMore = false
 		items = append(items, tagResp.Items...)
 	}
 
