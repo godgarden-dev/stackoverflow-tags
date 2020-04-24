@@ -97,11 +97,13 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 		return nil, err
 	}
 	q := url.Values{
-		"page":     []string{strconv.Itoa(page)},
-		"per_page": []string{strconv.Itoa(DefaultPageSize)},
-		"order":    []string{"desc"},
-		"sort":     []string{"popular"},
-		"site":     []string{"stackoverflow"},
+		"access_token": []string{os.Getenv("ACCESS_TOKEN")},
+		"key":          []string{os.Getenv("KEY")},
+		"page":         []string{strconv.Itoa(page)},
+		"pagesize":     []string{strconv.Itoa(DefaultPageSize)},
+		"order":        []string{"desc"},
+		"sort":         []string{"popular"},
+		"site":         []string{"stackoverflow"},
 	}
 	req.URL.RawQuery = q.Encode()
 
@@ -127,7 +129,9 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 			return nil, err
 		}
 
-		q.Set("page", strconv.Itoa(page+1))
+		page += 1
+		log.Println(page)
+		q.Set("page", strconv.Itoa(page))
 		req.URL.RawQuery = q.Encode()
 
 		res, err := c.HTTPClient.Do(req)
@@ -146,8 +150,7 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 		}
 
 		// Request間隔の調整
-		log.Println(tagResp.HasMore)
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Second * 4)
 		items = append(items, tagResp.Items...)
 	}
 
