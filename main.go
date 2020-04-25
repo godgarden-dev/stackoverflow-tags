@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gocarina/gocsv"
 	"io"
 	"log"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/avast/retry-go"
+	"github.com/gocarina/gocsv"
 	"github.com/pkg/errors"
 )
 
@@ -54,12 +55,11 @@ func main() {
 	ctx := context.Background()
 	tags, err := client.listTags(ctx)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
-	fmt.Println(tags)
 	if err := output(tags); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	log.Println("INFO:END")
@@ -89,8 +89,6 @@ func (c *Client) newRequest(ctx context.Context, method, spath string, body io.R
 }
 
 func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
-	var items []Tag
-	var page int = 1
 
 	req, err := c.newRequest(ctx, "GET", "/tags", nil)
 	if err != nil {
@@ -99,7 +97,6 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 	q := url.Values{
 		"access_token": []string{os.Getenv("ACCESS_TOKEN")},
 		"key":          []string{os.Getenv("KEY")},
-		"page":         []string{strconv.Itoa(page)},
 		"pagesize":     []string{strconv.Itoa(DefaultPageSize)},
 		"order":        []string{"desc"},
 		"sort":         []string{"popular"},
@@ -107,51 +104,45 @@ func (c *Client) listTags(ctx context.Context) ([]Tag, error) {
 	}
 	req.URL.RawQuery = q.Encode()
 
-	res, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if res.StatusCode != 200 {
-		log.Printf("break!! status:%d", res.StatusCode)
-		return nil, nil
-	}
-
-	var tagResp *TagResponse
-	if err := decodeBody(res, &tagResp); err != nil {
-		return nil, err
-	}
-	items = append(items, tagResp.Items...)
-
+	var items []Tag
+	var page int = 1
+	tagResp := &TagResponse{HasMore: true}
 	for tagResp.HasMore {
-		req, err := c.newRequest(ctx, "GET", "/tags", nil)
-		if err != nil {
-			return nil, err
-		}
+		if err := retry.Do(
+			func() error {
+				req, err := c.newRequest(ctx, "GET", "/tags", nil)
+				if err != nil {
+					return err
+				}
 
-		page += 1
-		log.Println(page)
-		q.Set("page", strconv.Itoa(page))
-		req.URL.RawQuery = q.Encode()
+				q.Set("page", strconv.Itoa(page))
+				req.URL.RawQuery = q.Encode()
+				log.Println(req.URL)
 
-		res, err := c.HTTPClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
+				res, err := c.HTTPClient.Do(req)
+				if err != nil {
+					return err
+				}
 
-		if res.StatusCode != 200 {
-			log.Printf("break!! status:%d", res.StatusCode)
+				if res.StatusCode != 200 {
+					log.Printf("break!! status:%d", res.StatusCode)
+					return errors.New(fmt.Sprintf("The status code is not correct. status:%d", res.StatusCode))
+				}
+
+				if err := decodeBody(res, tagResp); err != nil {
+					return err
+				}
+
+				// Request間隔の調整
+				time.Sleep(time.Second * 3)
+				items = append(items, tagResp.Items...)
+				page += 1
+				return nil
+			},
+		); err != nil {
+			log.Println("for break!!")
 			break
 		}
-
-		var tags TagResponse
-		if err := decodeBody(res, &tags); err != nil {
-			return nil, err
-		}
-
-		// Request間隔の調整
-		time.Sleep(time.Second * 4)
-		items = append(items, tagResp.Items...)
 	}
 
 	return items, nil
